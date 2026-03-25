@@ -70,7 +70,7 @@ class MemoryDashboardApp(App[None]):
         padding: 1 2;
     }
     .stats-row {
-        height: 1fr;
+        height: auto;
         margin-bottom: 1;
     }
     .stats-panel {
@@ -78,6 +78,7 @@ class MemoryDashboardApp(App[None]):
         border: solid $accent;
         padding: 1 2;
         margin: 0 1 0 0;
+        height: auto;
     }
     .stats-panel:last-child {
         margin-right: 0;
@@ -88,7 +89,7 @@ class MemoryDashboardApp(App[None]):
         margin-bottom: 1;
     }
     .panel-body {
-        height: 1fr;
+        height: auto;
     }
 
     /* --- Memories --- */
@@ -459,8 +460,8 @@ class MemoryDashboardApp(App[None]):
                 name = (c.get("category") or "uncategorized")[:12].ljust(12)
                 count = c["count"]
                 bar_w = int((count / max_count) * 20) if max_count > 0 else 0
-                bar = "\u2588" * bar_w + "\u2591" * (20 - bar_w)
-                cat_lines.append(f"  {name} {bar}  {count}")
+                bar = "#" * bar_w + "." * (20 - bar_w)
+                cat_lines.append(f"  {name} [{bar}] {count:>4}")
             self.query_one("#ov-categories", Static).update("\n".join(cat_lines))
         else:
             self.query_one("#ov-categories", Static).update("  No data")
@@ -468,16 +469,16 @@ class MemoryDashboardApp(App[None]):
         projects: list[dict] = stats.get("projects", [])[:8]
         if projects:
             proj_lines = [
-                f"  {p['project'][:24].ljust(24)} {p['count']}" for p in projects
+                f"  {p['project'][:28].ljust(28)} {p['count']:>4}" for p in projects
             ]
             self.query_one("#ov-projects", Static).update("\n".join(proj_lines))
         else:
             self.query_one("#ov-projects", Static).update("  No data")
 
-        recent: list[dict] = stats.get("recent", [])[:6]
+        recent: list[dict] = stats.get("recent", [])[:8]
         if recent:
             recent_lines = [
-                f"  {r.get('title', '')[:36].ljust(36)} {r.get('updated_at', '')[:10]}"
+                f"  {r.get('title', '')[:50].ljust(50)} {r.get('updated_at', '')[:10]}"
                 for r in recent
             ]
             self.query_one("#ov-recent", Static).update("\n".join(recent_lines))

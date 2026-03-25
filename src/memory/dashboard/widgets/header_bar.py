@@ -15,37 +15,24 @@ class HeaderBar(Widget):
     HeaderBar {
         dock: top;
         height: 1;
+        layout: horizontal;
         background: $accent;
         color: $text;
     }
 
-    HeaderBar .header-app-name {
+    HeaderBar .hdr-left {
         width: auto;
         padding: 0 1;
         text-style: bold;
-        color: $text;
     }
 
-    HeaderBar .header-mode {
-        width: auto;
-        padding: 0 1;
-        color: $text;
-    }
-
-    HeaderBar .header-spacer {
+    HeaderBar .hdr-spacer {
         width: 1fr;
     }
 
-    HeaderBar .header-project {
+    HeaderBar .hdr-right {
         width: auto;
         padding: 0 1;
-        color: $text;
-    }
-
-    HeaderBar .header-count {
-        width: auto;
-        padding: 0 1;
-        color: $text;
     }
     """
 
@@ -54,27 +41,26 @@ class HeaderBar(Widget):
     memory_count: reactive[int] = reactive(0)
 
     def compose(self) -> ComposeResult:
-        yield Static("EchoVault", classes="header-app-name")
-        yield Static(":overview", id="header-mode-label", classes="header-mode")
-        yield Static("", classes="header-spacer")
-        yield Static("", id="header-project-label", classes="header-project")
-        yield Static("", id="header-count-label", classes="header-count")
+        yield Static("EchoVault", classes="hdr-left")
+        yield Static(":overview", id="hdr-mode", classes="hdr-left")
+        yield Static("", classes="hdr-spacer")
+        yield Static("all projects", id="hdr-project", classes="hdr-right")
+        yield Static("0 memories", id="hdr-count", classes="hdr-right")
 
     def watch_mode(self, value: str) -> None:
         try:
-            self.query_one("#header-mode-label", Static).update(f":{value}")
+            self.query_one("#hdr-mode", Static).update(f":{value}")
         except Exception:
             pass
 
     def watch_project(self, value: str) -> None:
         try:
-            label = value if value else "all projects"
-            self.query_one("#header-project-label", Static).update(label)
+            self.query_one("#hdr-project", Static).update(value or "all projects")
         except Exception:
             pass
 
     def watch_memory_count(self, value: int) -> None:
         try:
-            self.query_one("#header-count-label", Static).update(f"{value} memories")
+            self.query_one("#hdr-count", Static).update(f"{value} memories")
         except Exception:
             pass
