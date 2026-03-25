@@ -607,8 +607,39 @@ class MemoryDashboardApp(App[None]):
         self.set_timer(0.03, do)
 
     def refresh_duplicates(self) -> None:
+        self.query_one("#rev-left-title", Static).update("LEFT")
+        self.query_one("#rev-left-body", Static).update("Loading duplicates...")
+        self.query_one("#rev-right-title", Static).update("RIGHT")
+        self.query_one("#rev-right-body", Static).update("")
+
         project = self.initial_project or None
-        rows = self.service.find_duplicate_candidates(project=project, limit=100)
+        memory_home = self.service.memory_home
+
+        def _fetch() -> list[dict]:
+            # Use a separate service/connection for thread safety
+            svc = MemoryService(memory_home=memory_home)
+            try:
+                return svc.find_duplicate_candidates(
+                    project=project, limit=100
+                )
+            finally:
+                svc.close()
+
+        self.run_worker(_fetch, thread=True, name="refresh-duplicates")
+
+    def on_worker_state_changed(self, event) -> None:
+        if event.worker.name != "refresh-duplicates":
+            return
+        if not event.worker.is_finished:
+            return
+        try:
+            rows = event.worker.result
+        except Exception:
+            self.notify("Failed to load duplicates", severity="error")
+            return
+        self._load_duplicate_rows(rows)
+
+    def _load_duplicate_rows(self, rows: list[dict]) -> None:
         filtered = [
             r
             for r in rows
@@ -629,12 +660,9 @@ class MemoryDashboardApp(App[None]):
         if filtered:
             self._show_pair("pair-0")
         else:
-            self.query_one("#rev-left-title", Static).update("LEFT")
             self.query_one("#rev-left-body", Static).update(
                 "No duplicate candidates."
             )
-            self.query_one("#rev-right-title", Static).update("RIGHT")
-            self.query_one("#rev-right-body", Static).update("")
 
     def _show_pair(self, pair_key: str) -> None:
         idx = int(pair_key.split("-")[-1])
