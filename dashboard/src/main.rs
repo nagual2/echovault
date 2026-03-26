@@ -145,6 +145,29 @@ fn run_app(
                     continue;
                 }
 
+                // Handle project filter input mode
+                if app.input_mode == InputMode::ProjectFilter {
+                    match key.code {
+                        KeyCode::Esc => {
+                            app.input_buffer.clear();
+                            app.input_mode = InputMode::Normal;
+                        }
+                        KeyCode::Enter => {
+                            app.project_filter = app.input_buffer.clone();
+                            app.input_mode = InputMode::Normal;
+                            app.refresh_current();
+                        }
+                        KeyCode::Backspace => {
+                            app.input_buffer.pop();
+                        }
+                        KeyCode::Char(c) => {
+                            app.input_buffer.push(c);
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
+
                 // Handle command input mode
                 if app.input_mode == InputMode::Command {
                     match key.code {
@@ -184,6 +207,10 @@ fn run_app(
                     KeyCode::Char('r') => {
                         app.refresh_current();
                         app.notify("Refreshed.");
+                    }
+                    KeyCode::Char('p') => {
+                        app.input_mode = InputMode::ProjectFilter;
+                        app.input_buffer = app.project_filter.clone();
                     }
                     KeyCode::Char('/') => {
                         app.input_mode = InputMode::Search;

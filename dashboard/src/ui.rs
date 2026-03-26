@@ -74,13 +74,14 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
 
 fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
     let hints = match app.input_mode {
-        InputMode::Search => "Type to search | Esc exit search | Enter apply",
+        InputMode::Search => "Type to search | Esc cancel | Enter apply",
+        InputMode::ProjectFilter => "Type project name | Esc cancel | Enter apply | Backspace to clear",
         InputMode::Command => &format!(": {}", app.input_buffer),
         InputMode::Normal => match app.mode {
-            Mode::Overview => "1 Overview  2 Memories  3 Review  4 Ops  r Refresh  : Command  q Quit",
-            Mode::Memories => "j/k Nav  e Edit  n New  a Archive  / Search  : Cmd  q Quit",
-            Mode::Review => "j/k Nav  m Merge(R>L)  a Archive Right  x Keep Sep  : Cmd  q Quit",
-            Mode::Operations => "r Refresh  : Command  q Quit",
+            Mode::Overview => "1 Overview  2 Memories  3 Review  4 Ops  p Project  r Refresh  : Cmd  q Quit",
+            Mode::Memories => "j/k Nav  e Edit  n New  a Archive  / Search  p Project  : Cmd  q Quit",
+            Mode::Review => "j/k Nav  m Merge(R>L)  a Archive Right  x Keep Sep  p Project  : Cmd  q Quit",
+            Mode::Operations => "p Project  r Refresh  : Command  q Quit",
         },
     };
     let footer = Paragraph::new(Line::from(Span::styled(
@@ -179,22 +180,21 @@ fn draw_memories(f: &mut Frame, app: &App, area: Rect) {
         .split(area);
 
     // Filter bar
-    let filter_text = match app.input_mode {
-        InputMode::Search => format!(
-            " Search: {}_ | Project: {} | Category: {} | Archived: {}",
-            app.input_buffer,
-            if app.project_filter.is_empty() { "all" } else { &app.project_filter },
-            if app.category_filter.is_empty() { "all" } else { &app.category_filter },
-            if app.include_archived { "yes" } else { "no" },
-        ),
-        _ => format!(
-            " Search: {} | Project: {} | Category: {} | Archived: {}",
-            if app.search_query.is_empty() { "(press /)" } else { &app.search_query },
-            if app.project_filter.is_empty() { "all" } else { &app.project_filter },
-            if app.category_filter.is_empty() { "all" } else { &app.category_filter },
-            if app.include_archived { "yes" } else { "no" },
-        ),
+    let search_display = match app.input_mode {
+        InputMode::Search => format!("{}_", app.input_buffer),
+        _ => if app.search_query.is_empty() { "(press /)".to_string() } else { app.search_query.clone() },
     };
+    let project_display = match app.input_mode {
+        InputMode::ProjectFilter => format!("{}_", app.input_buffer),
+        _ => if app.project_filter.is_empty() { "all".to_string() } else { app.project_filter.clone() },
+    };
+    let filter_text = format!(
+        " Search: {} | Project: {} | Category: {} | Archived: {}",
+        search_display,
+        project_display,
+        if app.category_filter.is_empty() { "all" } else { &app.category_filter },
+        if app.include_archived { "yes" } else { "no" },
+    );
     let filter = Paragraph::new(filter_text)
         .block(Block::default().borders(Borders::BOTTOM).border_style(Style::default().fg(DIM)));
     f.render_widget(filter, chunks[0]);

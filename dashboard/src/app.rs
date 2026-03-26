@@ -17,6 +17,7 @@ pub enum Mode {
 pub enum InputMode {
     Normal,
     Search,
+    ProjectFilter,
     Command,
 }
 
