@@ -496,14 +496,25 @@ def sessions(limit, project):
 @click.option("--include-archived", is_flag=True, default=False, help="Show archived memories on launch")
 def dashboard(project, include_archived):
     """Launch the EchoVault terminal dashboard."""
-    from memory.dashboard import MemoryDashboardApp
+    import shutil
+    import subprocess
 
-    svc = MemoryService()
-    try:
-        app = MemoryDashboardApp(service=svc, initial_project=project, include_archived=include_archived)
-        app.run()
-    finally:
-        svc.close()
+    binary = shutil.which("memory-dashboard")
+    if binary is None:
+        click.echo("Error: memory-dashboard binary not found on PATH.")
+        click.echo("Build it: cd dashboard && cargo build --release")
+        click.echo("Install it: cp dashboard/target/release/memory-dashboard ~/.local/bin/")
+        raise SystemExit(1)
+
+    cmd = [binary]
+    if project:
+        cmd.extend(["--project", project])
+    if include_archived:
+        cmd.append("--include-archived")
+
+    memory_home = get_memory_home()
+    env = {**os.environ, "MEMORY_HOME": memory_home}
+    raise SystemExit(subprocess.call(cmd, env=env))
 
 
 def _resolve_config_dir(agent_dot_dir: str, config_dir: str | None, project: bool) -> str:

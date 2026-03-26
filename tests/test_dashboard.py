@@ -1,4 +1,4 @@
-"""Tests for dashboard service flows and Textual app boot."""
+"""Tests for dashboard service flows."""
 
 import json
 from pathlib import Path
@@ -6,8 +6,6 @@ from pathlib import Path
 import pytest
 
 from memory.core import MemoryService
-from memory.dashboard import MemoryDashboardApp
-from memory.dashboard.widgets.memory_table import VimDataTable
 from memory.markdown import parse_session_file
 from memory.models import RawMemoryInput
 
@@ -119,24 +117,3 @@ def test_duplicate_candidates_prioritize_same_project_matches(dashboard_service)
     top = candidates[0]
     assert top["project"] == "dashboard-project"
     assert {"Dependency policy", "Dependency policy update"} == {top["left_title"], top["right_title"]}
-
-
-@pytest.mark.anyio
-async def test_dashboard_app_boots_and_filters(dashboard_service):
-    app = MemoryDashboardApp(service=dashboard_service, initial_project="dashboard-project")
-    async with app.run_test() as pilot:
-        await pilot.pause()
-
-        # Switch to memories view
-        await pilot.press("2")
-        await pilot.pause()
-
-        # Search for a specific memory
-        from textual.widgets import Input
-
-        app.query_one("#mem-search", Input).value = "Dependency"
-        app.refresh_memories()
-        await pilot.pause()
-
-        table = app.query_one("#mem-table", VimDataTable)
-        assert table.row_count == 1
