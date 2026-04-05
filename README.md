@@ -44,6 +44,10 @@ I built EchoVault to solve this: local memory persistence for coding agents that
 
 **Terminal dashboard** — Launch `memory dashboard` for a k9s-style keyboard-driven TUI with vim navigation, `$EDITOR` integration, search, stats, duplicate review, and command palette.
 
+**Unified 3-Tier Memory** — Hierarchical memory architecture with Fast (RAM, 24h TTL), Medium (SSD, 7-day LRU), and Slow (HDD, async semantic) tiers. Automatic migration between tiers with safe rollback support. See [UNIFIED_MEMORY.md](UNIFIED_MEMORY.md) for details.
+
+**Safe Rollout** — Feature flags for gradual migration: `disabled → shadow → canary → enabled`. Emergency rollback to legacy system if issues occur. New MCP tools: `memory_rollback_status`, `memory_rollback_enable`, `memory_rollback_emergency`.
+
 ## Install
 
 Install the latest stable release:
@@ -262,6 +266,9 @@ All agents share the same memory vault at your effective `memory_home` path (def
 | `memory config clear-home` | Remove persisted memory location |
 | `memory reindex` | Rebuild vectors after changing provider |
 | `memory mcp` | Start the MCP server (stdio transport) |
+| `memory rollback_status` | Check unified memory system health |
+| `memory rollback_enable <stage>` | Enable rollout stage: shadow/canary/enabled |
+| `memory rollback_emergency` | Emergency rollback to legacy system |
 
 ## Uninstall
 
