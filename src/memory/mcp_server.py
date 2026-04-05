@@ -11,6 +11,7 @@ from mcp.types import TextContent, Tool
 
 from memory.core import MemoryService
 from memory.models import RawMemoryInput
+from memory.web_search import get_web_search_manager
 
 VALID_CATEGORIES = ("decision", "bug", "pattern", "learning", "context")
 
@@ -47,14 +48,20 @@ Returns a list of recommended actions (ADD/DELETE) for Core Memory."""
 
 COLLECTIVE_DESCRIPTION = """Invoke the Collective Wisdom of Dwarh-cruisers when a single agent cannot solve a task.
 Analyzes the task, searches all available memory projects, and suggests specialized tools or strategies.
+Automatically performs web search when local memory is insufficient and API keys are configured.
 Use this when search results are insufficient or the task requires cross-domain knowledge."""
 
 
-def handle_memory_collective_solve(
+async def handle_memory_collective_solve(
     service: MemoryService,
     task_description: str,
 ) -> str:
-    """Handle memory_collective_solve tool call. Returns JSON string with strategy."""
+    """Handle memory_collective_solve tool call. Returns JSON string with strategy.
+    
+    Hybrid approach: local memory first, web search fallback when needed.
+    """
+    web_manager = get_web_search_manager()
+    
     # 1. Broad search across ALL projects in memory
     all_results = []
     try:
@@ -63,12 +70,19 @@ def handle_memory_collective_solve(
     except Exception:
         pass
 
-    # 2. Identify relevant projects and patterns
+    # 2. Web search if local results are insufficient
+    web_results = []
+    try:
+        if web_manager.needs_web_search(task_description, len(all_results)):
+            web_results = await web_manager.search(task_description)
+    except Exception:
+        # Web search is optional - don't fail if it errors
+        pass
+
+    # 3. Identify relevant projects and patterns
     relevant_projects = sorted(list(set(r.get("project") for r in all_results if r.get("project"))))
     
-    # 3. Analyze if we have specialized tools for this
-    # (Simulated intelligence: if task involves 'network', suggest tcpdump/ip; 
-    # if 'code', suggest ultracode graph tools)
+    # 4. Analyze if we have specialized tools for this
     suggestions = []
     task_lower = task_description.lower()
     
@@ -83,15 +97,24 @@ def handle_memory_collective_solve(
     if any(k in task_lower for k in ["docker", "container", "sdk", "build"]):
         suggestions.append("Check 'docker-windows-optimization' requirements in specs.")
         suggestions.append("Use 'wsl --shutdown' if file locking persists.")
+    
+    # Add web results to suggestions if available
+    if web_results:
+        suggestions.append(f"Web search found {len(web_results)} relevant sources.")
+        for r in web_results[:2]:
+            suggestions.append(f"  • {r.title[:50]}... ({r.source})")
 
-    # 4. Formulate Collective Response
+    # 5. Formulate Collective Response
     response = {
         "status": "collective_sync",
+        "local_memories_found": len(all_results),
+        "web_sources_found": len(web_results),
         "relevant_knowledge_domains": relevant_projects,
         "top_memories": [
             {"title": r["title"], "project": r["project"], "id": r["id"]} 
             for r in all_results[:3]
         ],
+        "web_sources": web_manager.format_results_for_collective(web_results) if web_results else [],
         "strategic_suggestions": suggestions or ["Deep dive into project-specific specifications recommended."],
         "message": "The Collective of Dwarh-cruisers has analyzed the probability field. Voids detected, applying specialized subroutines."
     }
@@ -206,9 +229,18 @@ def handle_memory_search(
     query: str,
     limit: int = 5,
     project: Optional[str] = None,
+    sort_by: Optional[str] = None,
 ) -> str:
     """Handle memory_search tool call. Returns JSON string."""
     results = service.search(query, limit=limit, project=project)
+
+    # Sort by timestamp if requested (for versioning support)
+    if sort_by == "timestamp":
+        import re
+        def extract_ts(r):
+            m = re.search(r'\[(\d{10,})\]', r.get("title", ""))
+            return int(m.group(1)) if m else 0
+        results = sorted(results, key=extract_ts, reverse=True)
 
     clean = []
     for r in results:
@@ -334,6 +366,7 @@ def _create_server(service: MemoryService) -> Server:
                         "query": {"type": "string", "description": "Search terms"},
                         "limit": {"type": "integer", "default": 5, "description": "Max results"},
                         "project": {"type": "string", "description": "Filter to project."},
+                        "sort_by": {"type": "string", "enum": ["relevance", "timestamp"], "default": "relevance", "description": "Sort results by relevance (default) or timestamp (for versioning)."},
                     },
                     "required": ["query"],
                 },
@@ -395,7 +428,7 @@ def _create_server(service: MemoryService) -> Server:
         elif name == "memory_governor":
             result = handle_memory_governor(service)
         elif name == "memory_collective_solve":
-            result = handle_memory_collective_solve(service, **arguments)
+            result = await handle_memory_collective_solve(service, **arguments)
         else:
             result = json.dumps({"error": f"Unknown tool: {name}"})
 

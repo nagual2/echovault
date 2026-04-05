@@ -485,7 +485,6 @@ class MemoryService:
 
         return results, total
 
-<<<<<<< HEAD
     def list_memories(
         self,
         *,
