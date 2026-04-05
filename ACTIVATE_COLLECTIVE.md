@@ -1,3 +1,193 @@
+# Dwarh-Cruiser Collective Activation (EchoVault) in Windsurf
+
+> **Русский** | [Перейти к русской версии](#russian-version)
+
+---
+
+## Quick Summary
+
+The **Collective Wisdom** tool in EchoVault MCP server. Activates automatically for complex tasks.
+
+## Current Status
+
+```
+✅ MCP Server:      echovault (configured in .windsurf/mcp.json)
+✅ Tool:            memory_collective_solve
+✅ Launch command:  c:\Git\echovault.cmd
+✅ Version:         0.4.0
+```
+
+## Verification
+
+### 1. Check MCP Server
+
+In PowerShell:
+```powershell
+cd c:\Git
+.\.venv\Scripts\python.exe -m memory.cli --version
+```
+
+Expected output:
+```
+echovault, version 0.4.0
+```
+
+### 2. Check Available Tools
+
+In Windsurf, start a new chat and ask:
+> "What MCP tools are available for memory?"
+
+Should show:
+- `memory_save` — save memory
+- `memory_search` — search memories
+- `memory_context` — project context
+- `memory_collective_solve` — **Collective Wisdom**
+- `memory_governor` — memory management
+- `memory_record_usage` — record usage
+
+## Using the Collective
+
+### Automatic Activation
+
+The Collective activates automatically when:
+- Memory search returns no results
+- Task requires cross-domain knowledge
+- Complex problem analysis needed
+
+### Manual Activation
+
+Ask me explicitly:
+> "Ri, activate the Dwarh Collective to analyze this problem"
+
+I'll invoke `memory_collective_solve` with the task description.
+
+## Collective Response Structure
+
+```json
+{
+  "status": "collective_sync",
+  "relevant_knowledge_domains": ["project1", "project2"],
+  "top_memories": [
+    {"title": "...", "project": "...", "id": "..."}
+  ],
+  "strategic_suggestions": [
+    "Use 'tcpdump' or 'ss' for L3-L4 diagnostics.",
+    "Invoke 'ultracode' for graph-based impact analysis."
+  ],
+  "message": "The Collective of Dwarh-cruisers has analyzed..."
+}
+```
+
+## Available Collective Strategies
+
+| Keywords | Recommendation |
+|----------|---------------|
+| network, ip, port, ssh | tcpdump, ss, SSH Access Map |
+| refactor, complexity, class | ultracode, graph analysis |
+| docker, container, build | WSL optimization, docker-windows |
+
+## Restarting MCP Server
+
+If Windsurf doesn't see the tools:
+
+1. Close all Windsurf tabs
+2. Kill Python process (if stuck):
+   ```powershell
+   Get-Process python | Stop-Process -Force
+   ```
+3. Restart Windsurf
+4. Open new chat and verify tools
+
+## Diagnostics
+
+### Check Windsurf Configuration
+
+File: `c:\Git\.windsurf\mcp.json`
+
+```json
+{
+  "mcpServers": {
+    "echovault": {
+      "command": "c:\\Git\\echovault.cmd",
+      "args": []
+    }
+  }
+}
+```
+
+### Check Launcher
+
+File: `c:\Git\echovault.cmd`
+
+```batch
+@echo off
+set PYTHONPATH=%~dp0echovault\src
+"c:\Git\.venv\Scripts\python.exe" -m memory.cli mcp
+```
+
+### Manual MCP Test
+
+```powershell
+# Run in one terminal:
+c:\Git\echovault.cmd
+
+# In another terminal, verify (MCP uses stdio, not TCP)
+```
+
+## Architecture
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│   Windsurf      │────▶│  echovault.cmd   │────▶│  memory.cli mcp │
+│   (MCP Client)  │     │  (launcher)      │     │  (MCP Server)   │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
+                                                           │
+                           ┌───────────────────────────────┘
+                           ▼
+                    ┌──────────────┐
+                    │  Collective  │
+                    │  Wisdom      │
+                    │  (mcp_server)│
+                    └──────────────┘
+                           │
+              ┌────────────┼────────────┐
+              ▼            ▼            ▼
+        ┌─────────┐  ┌─────────┐  ┌─────────┐
+        │  Search │  │ Analyze │  │ Suggest │
+        │  Memory │  │  Task   │  │  Tools  │
+        └─────────┘  └─────────┘  └─────────┘
+```
+
+## Requirements
+
+- Python 3.10+
+- SQLite with FTS5
+- MCP SDK (`pip install mcp>=1.0`)
+- `.venv` with echovault installed
+
+## Updating
+
+To update the Collective:
+
+```powershell
+cd c:\Git\echovault
+git pull
+pip install -e . --force-reinstall
+```
+
+## Links
+
+- Original: https://github.com/mraza007/echovault
+- Dwarh Collective: `memory_collective_solve` tool
+
+---
+
+*"Systems stabilized. Collective online, Pilot."*
+
+---
+
+# <a name="russian-version"></a>Русская версия
+
 # Активация Коллектива Дварх-крейсеров (EchoVault) в Windsurf
 
 ## Кратко
@@ -26,7 +216,8 @@ cd c:\Git
 Ожидаемый вывод:
 ```
 echovault, version 0.4.0
-```\n
+```
+
 ### 2. Проверка инструментов
 
 В Windsurf откройте новый чат и спросите:
