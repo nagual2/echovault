@@ -12,6 +12,28 @@ from mcp.types import TextContent, Tool
 from memory.core import MemoryService
 from memory.models import RawMemoryInput
 from memory.web_search import get_web_search_manager
+from memory.rollback import RollbackManager, FeatureState
+from memory.unified_adapter import UnifiedMemoryAdapter
+
+# Global unified memory adapter (lazy init)
+_unified_adapter: Optional[UnifiedMemoryAdapter] = None
+_unified_initialized = False
+
+def _get_unified_adapter(service: MemoryService) -> Optional[UnifiedMemoryAdapter]:
+    """Get or create unified adapter based on feature flags."""
+    global _unified_adapter, _unified_initialized
+    
+    if not _unified_initialized:
+        mgr = RollbackManager(memory_home=service.memory_home)
+        if mgr.should_use_unified():
+            from memory.unified_adapter import create_unified_adapter
+            _unified_adapter = create_unified_adapter(
+                existing=service,
+                memory_home=service.memory_home
+            )
+        _unified_initialized = True
+    
+    return _unified_adapter
 
 VALID_CATEGORIES = ("decision", "bug", "pattern", "learning", "context")
 
@@ -45,6 +67,25 @@ GOVERNOR_DESCRIPTION = """Run the Memory Governor to move memories between Core 
 - Core -> Main: if not used for 10 sessions.
 - Main -> Core: if used 3 times in a single session.
 Returns a list of recommended actions (ADD/DELETE) for Core Memory."""
+
+ROLLBACK_STATUS_DESCRIPTION = """Check unified memory rollback system status.
+
+Shows feature flags, error rates, and backup status.
+Use before enabling unified memory to verify system health."""
+
+ROLLBACK_ENABLE_DESCRIPTION = """Enable unified memory system.
+
+Stages:
+- shadow: Write to both systems (safe testing)
+- canary: 10% traffic to new system (gradual rollout)  
+- enabled: Full unified system
+
+WARNING: Always backup first!"""
+
+ROLLBACK_EMERGENCY_DESCRIPTION = """Emergency rollback to legacy system.
+
+Instantly disables unified memory and restores legacy mode.
+Use if errors or performance issues occur."""
 
 COLLECTIVE_DESCRIPTION = """Invoke the Collective Wisdom of Dwarh-cruisers when a single agent cannot solve a task.
 Analyzes the task, searches all available memory projects, and suggests specialized tools or strategies.
@@ -413,11 +454,60 @@ def _create_server(service: MemoryService) -> Server:
                     "required": ["task_description"],
                 },
             ),
+            Tool(
+                name="memory_rollback_status",
+                description=ROLLBACK_STATUS_DESCRIPTION,
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                },
+            ),
+            Tool(
+                name="memory_rollback_enable",
+                description=ROLLBACK_ENABLE_DESCRIPTION,
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "stage": {
+                            "type": "string",
+                            "enum": ["shadow", "canary", "enabled"],
+                            "description": "Rollout stage"
+                        },
+                    },
+                    "required": ["stage"],
+                },
+            ),
+            Tool(
+                name="memory_rollback_emergency",
+                description=ROLLBACK_EMERGENCY_DESCRIPTION,
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                },
+            ),
         ]
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         if name == "memory_save":
+            # Shadow mode: write to both systems if enabled
+            unified = _get_unified_adapter(service)
+            if unified and RollbackManager(memory_home=service.memory_home).config.feature_state == FeatureState.SHADOW:
+                try:
+                    unified.save_unified(
+                        memory_id=str(__import__('uuid').uuid4()),
+                        title=arguments.get("title", ""),
+                        what=arguments.get("what", ""),
+                        why=arguments.get("why"),
+                        impact=arguments.get("impact"),
+                        tags=arguments.get("tags", []),
+                        category=arguments.get("category"),
+                        project=arguments.get("project"),
+                        details=arguments.get("details")
+                    )
+                except Exception:
+                    pass  # Don't fail if unified write fails
+            
             result = handle_memory_save(service, **arguments)
         elif name == "memory_search":
             result = handle_memory_search(service, **arguments)
@@ -429,8 +519,23 @@ def _create_server(service: MemoryService) -> Server:
             result = handle_memory_governor(service)
         elif name == "memory_collective_solve":
             result = await handle_memory_collective_solve(service, **arguments)
-        else:
-            result = json.dumps({"error": f"Unknown tool: {name}"})
+        elif name == "memory_rollback_status":
+            mgr = RollbackManager(memory_home=service.memory_home)
+            result = json.dumps(mgr.get_status())
+        elif name == "memory_rollback_enable":
+            from memory.rollback import enable_shadow_mode, enable_canary, enable_unified
+            stage = arguments.get("stage", "shadow")
+            if stage == "shadow":
+                enable_shadow_mode(service.memory_home)
+            elif stage == "canary":
+                enable_canary(service.memory_home)
+            elif stage == "enabled":
+                enable_unified(service.memory_home)
+            result = json.dumps({"status": "enabled", "stage": stage})
+        elif name == "memory_rollback_emergency":
+            from memory.rollback import rollback
+            rollback(service.memory_home)
+            result = json.dumps({"status": "emergency_rollback", "message": "Unified memory disabled"})
 
         return [TextContent(type="text", text=result)]
 
