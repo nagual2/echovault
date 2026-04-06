@@ -22,6 +22,8 @@ from typing import Callable, Optional
 from dataclasses import dataclass, field
 from enum import Enum
 
+from memory.graph_relations import GraphRelationsStore, MemoryRelation, RelationType
+
 
 class MemoryTier(Enum):
     FAST = "fast"      # In-memory, 24h TTL
@@ -226,7 +228,49 @@ class FastMemoryTier:
         
         return [self._row_to_entry(row) for row in cursor.fetchall()]
     
-    def remove(self, memory_id: str) -> bool:
+    def search_by_time_range(
+        self,
+        start_timestamp: int,
+        end_timestamp: int,
+        limit: int = 100,
+        project: Optional[str] = None
+    ) -> list[MemoryEntry]:
+        """Search entries within timestamp range.
+        
+        Args:
+            start_timestamp: Unix timestamp (inclusive)
+            end_timestamp: Unix timestamp (inclusive)
+            limit: Max results
+            project: Optional project filter
+            
+        Returns:
+            List of entries in time range, sorted by timestamp desc
+        """
+        cursor = self.db.cursor()
+        
+        sql = """
+            SELECT * FROM memories 
+            WHERE timestamp >= ? AND timestamp <= ?
+            AND expires_at > ?
+        """
+        params = [start_timestamp, end_timestamp, int(time.time())]
+        
+        if project:
+            sql += " AND project = ?"
+            params.append(project)
+        
+        sql += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+        
+        cursor.execute(sql, params)
+        
+        results = [self._row_to_entry(row) for row in cursor.fetchall()]
+        
+        # Update access stats
+        for entry in results:
+            self._touch(entry.id)
+        
+        return results
         """Remove entry from fast tier."""
         cursor = self.db.cursor()
         cursor.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
@@ -463,6 +507,49 @@ class MediumMemoryTier:
             last_access=row["last_access"]
         )
     
+    def search_by_time_range(
+        self,
+        start_timestamp: int,
+        end_timestamp: int,
+        limit: int = 100,
+        project: Optional[str] = None
+    ) -> list[MemoryEntry]:
+        """Search entries within timestamp range.
+        
+        Args:
+            start_timestamp: Unix timestamp (inclusive)
+            end_timestamp: Unix timestamp (inclusive)
+            limit: Max results
+            project: Optional project filter
+            
+        Returns:
+            List of entries in time range, sorted by timestamp desc
+        """
+        cursor = self.db.cursor()
+        
+        sql = """
+            SELECT * FROM memories 
+            WHERE timestamp >= ? AND timestamp <= ?
+        """
+        params = [start_timestamp, end_timestamp]
+        
+        if project:
+            sql += " AND project = ?"
+            params.append(project)
+        
+        sql += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+        
+        cursor.execute(sql, params)
+        
+        results = [self._row_to_entry(row) for row in cursor.fetchall()]
+        
+        # Update access stats
+        for entry in results:
+            self._touch(entry.id)
+        
+        return results
+    
     def get_for_migration(self, limit: int = 50) -> list[MemoryEntry]:
         """Get entries ready for migration to Slow tier.
         
@@ -493,9 +580,10 @@ class SlowMemoryTier:
     - Semantic compression for storage efficiency
     """
     
-    def __init__(self, db_path: str, embedding_provider=None):
+    def __init__(self, db_path: str, embedding_provider=None, compression_provider=None):
         self.db_path = db_path
         self.embedding_provider = embedding_provider
+        self.compression_provider = compression_provider
         self.db = sqlite3.connect(db_path)
         self.db.row_factory = sqlite3.Row
         self.search_queue = asyncio.Queue()
@@ -662,11 +750,13 @@ class SlowMemoryTier:
     
     def _compress_details(self, details: str, max_chars: int = 500) -> str:
         """Compress details to semantic summary."""
-        # Simple truncation + key sentence extraction
+        if self.compression_provider:
+            return self.compression_provider.compress(details, max_chars)
+        
+        # Fallback to simple truncation
         if len(details) <= max_chars:
             return details
         
-        # Take first and last paragraphs (often contain key info)
         paragraphs = [p.strip() for p in details.split("\n\n") if p.strip()]
         if len(paragraphs) <= 2:
             return details[:max_chars] + "..."
@@ -702,6 +792,49 @@ class SlowMemoryTier:
             details=row["summary"],  # Use compressed summary
             access_count=row["access_count"]
         )
+    
+    def search_by_time_range(
+        self,
+        start_timestamp: int,
+        end_timestamp: int,
+        limit: int = 100,
+        project: Optional[str] = None
+    ) -> list[MemoryEntry]:
+        """Search entries within timestamp range.
+        
+        Args:
+            start_timestamp: Unix timestamp (inclusive)
+            end_timestamp: Unix timestamp (inclusive)
+            limit: Max results
+            project: Optional project filter
+            
+        Returns:
+            List of entries in time range, sorted by timestamp desc
+        """
+        cursor = self.db.cursor()
+        
+        sql = """
+            SELECT * FROM memories 
+            WHERE timestamp >= ? AND timestamp <= ?
+        """
+        params = [start_timestamp, end_timestamp]
+        
+        if project:
+            sql += " AND project = ?"
+            params.append(project)
+        
+        sql += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+        
+        cursor.execute(sql, params)
+        
+        results = [self._row_to_entry(row) for row in cursor.fetchall()]
+        
+        # Update access stats
+        for entry in results:
+            self._touch(entry.id)
+        
+        return results
 
 
 class UnifiedMemoryService:
@@ -715,7 +848,8 @@ class UnifiedMemoryService:
                  fast_db: Optional[FastMemoryTier] = None,
                  medium_db_path: Optional[str] = None,
                  slow_db_path: Optional[str] = None,
-                 embedding_provider=None):
+                 embedding_provider=None,
+                 compression_provider=None):
         """Initialize unified memory service.
         
         Args:
@@ -723,6 +857,7 @@ class UnifiedMemoryService:
             medium_db_path: Path to medium tier DB (SSD)
             slow_db_path: Path to slow tier DB (HDD)
             embedding_provider: Provider for semantic embeddings
+            compression_provider: Provider for LLM-based compression
         """
         self.fast = fast_db or FastMemoryTier()
         self.medium = MediumMemoryTier(
@@ -730,10 +865,13 @@ class UnifiedMemoryService:
         )
         self.slow = SlowMemoryTier(
             slow_db_path or os.path.expanduser("~/.memory/slow.db"),
-            embedding_provider
+            embedding_provider,
+            compression_provider
         )
+        self.graph = GraphRelationsStore(slow_db_path or os.path.expanduser("~/.memory/slow.db"))
         
         self.embedding_provider = embedding_provider
+        self.compression_provider = compression_provider
         self._migration_task: Optional[asyncio.Task] = None
     
     async def start(self):
@@ -849,6 +987,100 @@ class UnifiedMemoryService:
         
         return sync_results
     
+    def search_by_time_range(
+        self,
+        start_timestamp: int,
+        end_timestamp: int,
+        limit: int = 100,
+        project: Optional[str] = None
+    ) -> list[MemoryEntry]:
+        """Search entries within timestamp range (sync + async aggregation).
+        
+        Searches Fast and Medium tiers synchronously,
+        schedules async search in Slow tier.
+        
+        Args:
+            start_timestamp: Unix timestamp (inclusive)
+            end_timestamp: Unix timestamp (inclusive)
+            limit: Max results per tier
+            project: Optional project filter
+            
+        Returns:
+            List of entries in time range, sorted by timestamp desc
+        """
+        # Search Fast tier
+        fast_results = self.fast.search_by_time_range(
+            start_timestamp, end_timestamp, limit, project
+        )
+        
+        # Search Medium tier
+        medium_results = self.medium.search_by_time_range(
+            start_timestamp, end_timestamp, limit, project
+        )
+        
+        # Merge results, avoiding duplicates
+        seen_ids = {r.id for r in fast_results}
+        all_results = list(fast_results)
+        
+        for entry in medium_results:
+            if entry.id not in seen_ids:
+                all_results.append(entry)
+                seen_ids.add(entry.id)
+        
+        # Sort by timestamp desc
+        all_results.sort(key=lambda x: x.timestamp, reverse=True)
+        
+        return all_results[:limit]
+    
+    def search_by_date(
+        self,
+        year: int,
+        month: Optional[int] = None,
+        day: Optional[int] = None,
+        limit: int = 100,
+        project: Optional[str] = None
+    ) -> list[MemoryEntry]:
+        """Search by calendar date (convenience method).
+        
+        Examples:
+            search_by_date(2025, 3)  # March 2025
+            search_by_date(2025, 3, 15)  # March 15, 2025
+        
+        Args:
+            year: Year (e.g., 2025)
+            month: Optional month (1-12)
+            day: Optional day (1-31)
+            limit: Max results
+            project: Optional project filter
+            
+        Returns:
+            List of entries in date range
+        """
+        import calendar
+        
+        # Calculate timestamp range
+        if month and day:
+            # Specific day
+            from datetime import datetime
+            start = datetime(year, month, day, 0, 0, 0)
+            end = datetime(year, month, day, 23, 59, 59)
+        elif month:
+            # Whole month
+            from datetime import datetime
+            start = datetime(year, month, 1, 0, 0, 0)
+            last_day = calendar.monthrange(year, month)[1]
+            end = datetime(year, month, last_day, 23, 59, 59)
+        else:
+            # Whole year
+            from datetime import datetime
+            start = datetime(year, 1, 1, 0, 0, 0)
+            end = datetime(year, 12, 31, 23, 59, 59)
+        
+        start_ts = int(start.timestamp())
+        end_ts = int(end.timestamp())
+        
+        return self.search_by_time_range(start_ts, end_ts, limit, project)
+
     def get_context(self, limit: int = 10,
                     project: Optional[str] = None) -> list[MemoryEntry]:
         """Get recent context from Fast and Medium tiers."""
@@ -872,15 +1104,35 @@ class UnifiedMemoryService:
 # Factory function for easy creation
 def create_unified_memory(
     memory_home: Optional[str] = None,
-    embedding_provider=None
+    embedding_provider=None,
+    compression_provider=None,
+    cache_embeddings: bool = True,
+    cache_maxsize: int = 1000,
 ) -> UnifiedMemoryService:
-    """Create a unified memory service with standard paths."""
+    """Create a unified memory service with standard paths.
+    
+    Args:
+        memory_home: Base directory for memory files
+        embedding_provider: Provider for semantic embeddings (auto-cached if enabled)
+        compression_provider: Provider for LLM-based compression (e.g., OllamaCompressor)
+        cache_embeddings: Whether to wrap provider in LRU cache
+        cache_maxsize: Max cache entries for embeddings
+    """
     home = memory_home or os.path.expanduser("~/.memory")
     
     os.makedirs(home, exist_ok=True)
     
+    # Wrap provider in cache if requested
+    if embedding_provider and cache_embeddings:
+        from memory.embeddings.cache import CachedEmbeddingProvider
+        embedding_provider = CachedEmbeddingProvider(
+            embedding_provider, 
+            maxsize=cache_maxsize
+        )
+    
     return UnifiedMemoryService(
         medium_db_path=os.path.join(home, "medium.db"),
         slow_db_path=os.path.join(home, "slow.db"),
-        embedding_provider=embedding_provider
+        embedding_provider=embedding_provider,
+        compression_provider=compression_provider
     )

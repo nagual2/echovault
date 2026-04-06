@@ -320,4 +320,5 @@ results = adapter.search_unified("query")
 2. **Мониторинг**: Метрики по тирам (hit rate, latency)
 3. **Настройки**: Configurable TTL, размеры, пути
 4. **Восстановление**: Startup scan для consistency
-5. **Компрессия**: NLP summarization для Slow tier
+5. **Graph relations**: Связи между сущностями
+6. **Конфликт-резолюшн**: Merge вместо INSERT OR REPLACE
