@@ -271,6 +271,8 @@ class FastMemoryTier:
             self._touch(entry.id)
         
         return results
+    
+    def remove(self, memory_id: str) -> bool:
         """Remove entry from fast tier."""
         cursor = self.db.cursor()
         cursor.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
