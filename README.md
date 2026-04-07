@@ -48,6 +48,11 @@ I built EchoVault to solve this: local memory persistence for coding agents that
 
 **Safe Rollout** — Feature flags for gradual migration: `disabled → shadow → canary → enabled`. Emergency rollback to legacy system if issues occur. New MCP tools: `memory_rollback_status`, `memory_rollback_enable`, `memory_rollback_emergency`.
 
+**Unified 3-Tier Memory Tools** — Direct access to Fast (RAM, 24h TTL), Medium (SSD, 7-day LRU), and Slow (HDD, archive) tiers:
+- `memory_unified_search` — Search Fast + Medium tiers immediately (no async wait)
+- `memory_unified_context` — Get context from Fast + Medium tiers (faster than search)
+- `memory_unified_save` — Save to Fast tier, auto-migrates to Medium (7d) then Slow (archive)
+
 ## Install
 
 Install the latest stable release:
@@ -269,6 +274,9 @@ All agents share the same memory vault at your effective `memory_home` path (def
 | `memory rollback_status` | Check unified memory system health |
 | `memory rollback_enable <stage>` | Enable rollout stage: shadow/canary/enabled |
 | `memory rollback_emergency` | Emergency rollback to legacy system |
+| `memory unified_search "query"` | Search Fast + Medium tiers (immediate) |
+| `memory unified_context` | Get context from Fast + Medium tiers |
+| `memory unified_save ...` | Save to Fast tier with auto-migration |
 
 ## Uninstall
 
