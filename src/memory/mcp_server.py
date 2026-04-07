@@ -8,11 +8,7 @@ from typing import Optional
 from mcp.server import Server
 from mcp.types import TextContent, Tool
 
-# Use patched stdio server for Windows compatibility
-try:
-    from memory.stdio_patch import stdio_server_patch as stdio_server
-except ImportError:
-    from mcp.server.stdio import stdio_server
+from mcp.server.stdio import stdio_server
 
 from memory.core import MemoryService
 from memory.models import RawMemoryInput
@@ -490,6 +486,47 @@ def _create_server(service: MemoryService) -> Server:
                     "properties": {},
                 },
             ),
+            Tool(
+                name="memory_unified_search",
+                description="Search unified memory system (Fast + Medium tiers). Returns results immediately from Fast (in-memory) and Medium (SSD) tiers.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search query"},
+                        "limit": {"type": "integer", "default": 5, "description": "Max results"},
+                        "project": {"type": "string", "description": "Filter by project"},
+                    },
+                    "required": ["query"],
+                },
+            ),
+            Tool(
+                name="memory_unified_context",
+                description="Get context from Fast and Medium tiers. Retrieves recent memories for context injection. Faster than search.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "limit": {"type": "integer", "default": 10, "description": "Max memories"},
+                        "project": {"type": "string", "description": "Filter by project"},
+                    },
+                },
+            ),
+            Tool(
+                name="memory_unified_save",
+                description="Save to unified memory (Fast tier). Entry starts in Fast tier (24h TTL), migrates to Medium (7d), then Slow (archive).",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "description": "Short title"},
+                        "what": {"type": "string", "description": "The essence"},
+                        "why": {"type": "string", "description": "Reasoning"},
+                        "impact": {"type": "string", "description": "What changed"},
+                        "tags": {"type": "array", "items": {"type": "string"}},
+                        "category": {"type": "string", "enum": ["decision", "bug", "pattern", "learning", "context"]},
+                        "project": {"type": "string", "description": "Project name"},
+                    },
+                    "required": ["title", "what"],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -541,6 +578,38 @@ def _create_server(service: MemoryService) -> Server:
             from memory.rollback import rollback
             rollback(service.memory_home)
             result = json.dumps({"status": "emergency_rollback", "message": "Unified memory disabled"})
+        elif name == "memory_unified_search":
+            from memory.unified import create_unified_memory
+            unified = create_unified_memory(memory_home=service.memory_home)
+            entries = unified.search_sync(
+                query=arguments.get("query", ""),
+                limit=arguments.get("limit", 5),
+                project=arguments.get("project")
+            )
+            result = json.dumps({"results": [e.__dict__ for e in entries], "count": len(entries)})
+        elif name == "memory_unified_context":
+            from memory.unified import create_unified_memory
+            unified = create_unified_memory(memory_home=service.memory_home)
+            entries = unified.get_context_sync(
+                limit=arguments.get("limit", 10),
+                project=arguments.get("project")
+            )
+            result = json.dumps({"results": [e.__dict__ for e in entries], "count": len(entries)})
+        elif name == "memory_unified_save":
+            from memory.unified import create_unified_memory, MemoryEntry, MemoryTier
+            unified = create_unified_memory(memory_home=service.memory_home)
+            entry = MemoryEntry(
+                title=arguments.get("title", ""),
+                what=arguments.get("what", ""),
+                why=arguments.get("why"),
+                impact=arguments.get("impact"),
+                tags=arguments.get("tags", []),
+                category=arguments.get("category"),
+                project=arguments.get("project"),
+                tier=MemoryTier.FAST
+            )
+            unified.save(entry)
+            result = json.dumps({"status": "saved", "id": entry.id})
 
         return [TextContent(type="text", text=result)]
 
