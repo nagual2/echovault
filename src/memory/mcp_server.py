@@ -6,8 +6,13 @@ from datetime import datetime
 from typing import Optional
 
 from mcp.server import Server
-from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
+
+# Use patched stdio server for Windows compatibility
+try:
+    from memory.stdio_patch import stdio_server_patch as stdio_server
+except ImportError:
+    from mcp.server.stdio import stdio_server
 
 from memory.core import MemoryService
 from memory.models import RawMemoryInput
