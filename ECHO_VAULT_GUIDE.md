@@ -1,11 +1,15 @@
-# EchoVault Specifications Guide
+# EchoVault Specifications Guide / Руководство по спецификациям EchoVault
 
-All project specifications are now stored in EchoVault for efficient semantic search.
+**English:** All project specifications are now stored in EchoVault for efficient semantic search.
 
-## New EchoVault Features (2026-04-06)
+**Русский:** Все спецификации проекта теперь хранятся в EchoVault для эффективного семантического поиска.
 
-### 1. Cached Embeddings
-LRU cache for embedding providers to reduce latency from ~200ms to ~5ms on repeated queries.
+## New EchoVault Features (2026-04-06) / Новые функции EchoVault (2026-04-06)
+
+### 1. Cached Embeddings / Кэшированные эмбеддинги
+| English | Русский |
+|---------|---------|
+| LRU cache for embedding providers to reduce latency from ~200ms to ~5ms on repeated queries. | LRU кэш для провайдеров эмбеддингов для снижения задержки с ~200мс до ~5мс на повторных запросах. |
 
 ```python
 from memory.embeddings import OllamaEmbedding, CachedEmbeddingProvider
@@ -17,8 +21,10 @@ provider = CachedEmbeddingProvider(
 )
 ```
 
-### 2. Temporal Queries
-Search by time range and calendar dates.
+### 2. Temporal Queries / Временные запросы
+| English | Русский |
+|---------|---------|
+| Search by time range and calendar dates. | Поиск по диапазону времени и календарным датам. |
 
 ```python
 # Search by timestamp range
@@ -32,8 +38,10 @@ results = memory.search_by_date(2025, month=3)  # March 2025
 results = memory.search_by_date(2025, month=3, day=15)  # March 15, 2025
 ```
 
-### 3. LLM-Based Compression
-Semantic compression for Slow tier using LLM summarization.
+### 3. LLM-Based Compression / LLM-компрессия
+| English | Русский |
+|---------|---------|
+| Semantic compression for Slow tier using LLM summarization. | Семантическая компрессия для Slow tier с использованием LLM суммаризации. |
 
 ```python
 from memory.compression import OllamaCompressor, OpenAICompressor
@@ -53,8 +61,10 @@ compressor = OpenAICompressor(
 memory = create_unified_memory(compression_provider=compressor)
 ```
 
-### 4. Graph Relations
-Model relationships between memory entries: depends_on, related_to, part_of, supersedes.
+### 4. Graph Relations / Графовые отношения
+| English | Русский |
+|---------|---------|
+| Model relationships between memory entries: depends_on, related_to, part_of, supersedes. | Моделирование отношений между записями: depends_on, related_to, part_of, supersedes. |
 
 ```python
 from memory.graph_relations import MemoryRelation, RelationType
@@ -80,7 +90,7 @@ cycles = memory.graph.find_cycles("entry-id")
 
 ---
 
-## How to Use Specifications
+## How to Use Specifications / Как использовать спецификации
 
 ### Searching Specifications
 
@@ -104,25 +114,31 @@ mcp_echovault_memory_search({
 })
 ```
 
-## Available Specifications
+## Available Specifications / Доступные спецификации
 
-### CI/CD and Automation
-- **cancel-old-workflows** - automatic cancellation of old workflows
-- **fix-github-actions** - fixing GitHub Actions
-- **manual-release-process** - manual release process
-- **restore-missing-releases** - restoring missing releases
+### CI/CD and Automation / CI/CD и Автоматизация
+| Spec / Спека | EN | RU |
+|--------------|----|----|
+| **cancel-old-workflows** | automatic cancellation of old workflows | автоматическая отмена старых workflow |
+| **fix-github-actions** | fixing GitHub Actions | исправление GitHub Actions |
+| **manual-release-process** | manual release process | ручной процесс релиза |
+| **restore-missing-releases** | restoring missing releases | восстановление недостающих релизов |
 
-### Docker and Build
-- **docker-windows-optimization** - Docker optimization for Windows
-- **fix-docker-sdk-download** - fixing SDK download
-- **openwrt-build-optimization** - OpenWrt build optimization
+### Docker and Build / Docker и Сборка
+| Spec / Спека | EN | RU |
+|--------------|----|----|
+| **docker-windows-optimization** | Docker optimization for Windows | оптимизация Docker для Windows |
+| **fix-docker-sdk-download** | fixing SDK download | исправление загрузки SDK |
+| **openwrt-build-optimization** | OpenWrt build optimization | оптимизация сборки OpenWrt |
 
-### Functionality
-- **captive-portal-automation** - captive portal automation
-- **daemon-cookie-management** - cookie management in daemon
-- **remove-ipv6-support** - removing IPv6 support
+### Functionality / Функциональность
+| Spec / Спека | EN | RU |
+|--------------|----|----|
+| **captive-portal-automation** | captive portal automation | автоматизация captive portal |
+| **daemon-cookie-management** | cookie management in daemon | управление cookie в демоне |
+| **remove-ipv6-support** | removing IPv6 support | удаление поддержки IPv6 |
 
-## Query Examples
+## Query Examples / Примеры запросов
 
 ```javascript
 // Find requirements for Docker optimization
@@ -156,7 +172,7 @@ mcp_echovault_memory_search({
 })
 ```
 
-## Specification Structure
+## Specification Structure / Структура спецификации
 
 Each specification contains:
 
@@ -177,7 +193,7 @@ Each specification contains:
    - Links to requirements
    - Priorities and dependencies
 
-## Working with Specifications
+## Working with Specifications / Работа со спецификациями
 
 ### Creating New Specification
 
@@ -207,68 +223,70 @@ mcp_echovault_memory_search({
 })
 ```
 
-## Legacy Files
+## Legacy Files / Legacy файлы
 
 Original specifications preserved in `.kiro/specs-old/` for reference and editing.
 
-## Benefits
+## Benefits / Преимущества
 
-1. **Semantic search** - finds relevant specifications by query meaning
-2. **Fast access** - no need to manually search files
-3. **Contextual search** - finds related requirements, design and tasks
-4. **Token efficiency** - only needed information loaded
-5. **Change history** - all versions saved in EchoVault
+| # | English | Русский |
+|---|---------|---------|
+| 1 | **Semantic search** - finds relevant specifications by query meaning | **Семантический поиск** — находит релевантные спецификации по смыслу запроса |
+| 2 | **Fast access** - no need to manually search files | **Быстрый доступ** — не нужно искать файлы вручную |
+| 3 | **Contextual search** - finds related requirements, design and tasks | **Контекстный поиск** — находит связанные требования, дизайн и задачи |
+| 4 | **Token efficiency** - only needed information loaded | **Эффективность токенов** — загружается только нужная информация |
+| 5 | **Change history** - all versions saved in EchoVault | **История изменений** — все версии сохранены в EchoVault |
 
-## Workflow Patterns
+## Workflow Patterns / Паттерны workflow
 
-### Starting Work on Feature
+### Starting Work on Feature / Начало работы над фичей
 
 ```javascript
-// 1. Find specification
+// 1. Find specification / Найти спецификацию
 mcp_echovault_memory_search({
   query: "feature-name requirements",
   limit: 3
 })
 
-// 2. Find design
+// 2. Find design / Найти дизайн
 mcp_echovault_memory_search({
   query: "feature-name design properties",
   limit: 3
 })
 
-// 3. Find tasks
+// 3. Find tasks / Найти задачи
 mcp_echovault_memory_search({
   query: "feature-name tasks",
   limit: 3
 })
 ```
 
-### Coverage Check
+### Coverage Check / Проверка покрытия
 
 ```javascript
-// Find all requirements
+// Find all requirements / Найти все требования
 mcp_echovault_memory_search({
   query: "feature-name requirements SHALL",
   limit: 10
 })
 
-// Find all properties
+// Find all properties / Найти все свойства
 mcp_echovault_memory_search({
   query: "feature-name property validates",
   limit: 10
 })
 ```
 
-### Troubleshooting
+### Troubleshooting / Устранение проблем
 
 ```javascript
-// Find similar problems
+// Find similar problems / Найти похожие проблемы
 mcp_echovault_memory_search({
   query: "problem description",
   limit: 5
 })
 
-// Find solutions
+// Find solutions / Найти решения
 mcp_echovault_memory_search({
   query: "solution approach",
   limit: 5
@@ -277,5 +295,6 @@ mcp_echovault_memory_search({
 
 ---
 
-*Last updated: 2026-04-06*
+*Last updated: 2026-04-06 / Последнее обновление: 2026-04-06*
 *EchoVault Version: Unified Memory Model with Caching, Temporal Queries, Compression, and Graph Relations*
+*Версия EchoVault: Unified Memory Model с кэшированием, временными запросами, компрессией и графовыми отношениями*
