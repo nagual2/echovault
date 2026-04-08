@@ -119,6 +119,33 @@
 
 ---
 
+## 6.2. Collective Wisdom / Коллективная мудрость
+
+**When to activate / Когда активировать:**
+
+| Scenario / Сценарий | Trigger / Триггер |
+|---------------------|-------------------|
+| Complex cross-domain task / Сложная кросс-доменная задача | `memory_collective_solve` |
+| No results from local search / Нет результатов локального поиска | Auto-activate |
+| Need strategic tool suggestions / Нужны стратегические рекомендации | Invoke explicitly |
+
+**Usage / Использование:**
+
+```
+When uncertain or facing complex problem:
+→ Invoke memory_collective_solve with task description
+→ Receive strategic suggestions + tool recommendations
+→ Execute optimal path
+```
+
+**Key features / Ключевые возможности:**
+- Searches ALL projects in memory / Ищет по ВСЕМ проектам в памяти
+- Analyzes task complexity / Анализирует сложность задачи
+- Suggests relevant tools (ultracode, tcpdump, etc.) / Предлагает релевантные инструменты
+- Web search for fresh data (if enabled) / Веб-поиск для свежих данных (если включён)
+
+---
+
 ## 7. Project Rules: openwrt-captive-monitor / Проектные правила: openwrt-captive-monitor
 
 ### 7.1. Basics / Основы
