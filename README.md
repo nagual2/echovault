@@ -12,6 +12,10 @@
   <a href="#install">Install</a> · <a href="#features">Features</a> · <a href="#how-it-works">How it works</a> · <a href="#commands">Commands</a> · <a href="https://muhammadraza.me/2026/building-local-memory-for-coding-agents/">Blog post</a>
 </p>
 
+<p align="center">
+  <b>🇷🇺 <a href="README.ru.md">Русская версия</a></b>
+</p>
+
 ---
 
 EchoVault gives your agent persistent memory. Every decision, bug fix, and lesson learned is saved locally and automatically surfaced in future sessions. Your agent gets better the more you use it.
