@@ -55,6 +55,38 @@ When search results show "Details: available":
 memory details <memory-id>
 ```
 
+## Session Protocol
+
+### Start of Session
+1. **Load context**: `memory context --project`
+2. **Search relevant**: `memory search "<topic>"`
+3. **Get details**: `memory details <id>` if needed
+
+### End of Session (MANDATORY)
+Before finishing ANY work:
+1. Review what was done
+2. Determine what to save (see categories below)
+3. Save with `--source claude-code`
+4. Verify: `memory context --project`
+
+### What to Save
+
+| MUST SAVE | NEVER SAVE |
+|-----------|------------|
+| Architectural decisions | Trivial changes (typos) |
+| Bug fixes (root cause + solution) | Info obvious from code |
+| Non-obvious patterns | Duplicates (search first!) |
+| Infrastructure/tooling setup | |
+| User corrections/clarifications | |
+
+### Categories
+- `decision` — architectural/design choices
+- `pattern` — discovered patterns or gotchas
+- `bug` — fixes with root causes
+- `setup` — infrastructure configuration
+- `learning` — lessons learned
+- `context` — important project context
+
 ## Rules
 
 - **Always capture thorough details** — never omit reasoning or context
@@ -62,3 +94,4 @@ memory details <memory-id>
 - **Wrap sensitive values** in `<redacted>` tags if referencing them
 - **Search before deciding** — check if a decision was already made
 - **Save after doing** — capture decisions, fixes, and learnings as you go
+- **Use `--source`** — identify your agent: `claude-code`, `codex`, or `cursor`
