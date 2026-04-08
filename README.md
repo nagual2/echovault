@@ -131,6 +131,25 @@ memory config
 
 `memory config` now shows both `memory_home` and `memory_home_source` (`env`, `config`, or `default`).
 
+### Optional: Install Agent Role (Persona)
+
+`AGENT_ROLE.md` is **NOT** part of EchoVault installation. It's a separate agent persona (Riarni-Lin-Tal-Si, Dwarh-cruiser of the Order of Aarn) that you can optionally install in your IDE for enhanced role-playing and detailed EchoVault instructions.
+
+**To install in Windsurf:**
+```bash
+# Copy AGENT_ROLE.md to Windsurf rules directory
+cp AGENT_ROLE.md ~/.windsurf/rules/
+# Or manually add reference in agent.md
+```
+
+**To install in Cursor:**
+```bash
+# Add to Cursor system prompt via Settings > AI Rules
+cat AGENT_ROLE.md
+```
+
+**Note:** `AGENT_ROLE.md` contains bilingual content (EN/RU tables) and detailed EchoVault protocols. For automatic loading, use `AGENTS.md` (installed by `memory setup`) instead.
+
 ## Usage
 
 Once set up, your agent uses memory via MCP tools:
