@@ -1,9 +1,53 @@
 """Hybrid search combining FTS5 keyword search and semantic vector search."""
 
+import re
 from typing import Optional
 
 from memory.db import MemoryDB
 from memory.embeddings.base import EmbeddingProvider
+
+
+_LOW_SIGNAL_MARKERS = {
+    "diagnostic",
+    "diagnostics",
+    "probe",
+    "temporary",
+    "test",
+    "validation",
+}
+
+
+def _tokenize(text: str) -> set[str]:
+    return {token for token in re.findall(r"\w+", text.lower(), flags=re.UNICODE)}
+
+
+def adjust_result_scores(results: list[dict], query: str) -> list[dict]:
+    """Down-rank low-signal housekeeping memories unless the query asks for them.
+
+    Temporary probes and diagnostics are useful for agent maintenance, but they
+    should not dominate normal user-facing retrieval.
+    """
+    query_terms = _tokenize(query)
+    wants_low_signal = bool(query_terms & _LOW_SIGNAL_MARKERS)
+    adjusted: list[dict] = []
+
+    for result in results:
+        item = dict(result)
+        score = float(item.get("score", 0.0))
+
+        if not wants_low_signal:
+            haystack = " ".join(
+                str(item.get(field, "")).lower() for field in ("title", "category", "tags")
+            )
+            if any(marker in haystack for marker in {"temporary", "probe", "diagnostic", "diagnostics"}):
+                score *= 0.55
+            elif any(marker in haystack for marker in {"test", "validation"}):
+                score *= 0.75
+
+        item["score"] = score
+        adjusted.append(item)
+
+    return sorted(adjusted, key=lambda x: x["score"], reverse=True)
 
 
 def merge_results(
@@ -63,6 +107,7 @@ def tiered_search(
     min_fts_results: int = 3,
     project: Optional[str] = None,
     source: Optional[str] = None,
+    include_archived: bool = False,
 ) -> list[dict]:
     """FTS-first tiered search that only calls embed when FTS results are sparse.
 
@@ -81,7 +126,13 @@ def tiered_search(
     Returns:
         Search results sorted by score descending
     """
-    fts_results = db.fts_search(query, limit=limit * 2, project=project, source=source)
+    fts_results = db.fts_search(
+        query,
+        limit=limit * 2,
+        project=project,
+        source=source,
+        include_archived=include_archived,
+    )
 
     # Normalize FTS scores to 0-1
     if fts_results:
@@ -89,26 +140,55 @@ def tiered_search(
         for r in fts_results:
             r["score"] = r["score"] / max_score if max_score > 0 else 0.0
 
-    # If FTS has enough results, return without calling embed
-    if len(fts_results) >= min_fts_results:
-        return fts_results[:limit]
+    # Only skip embeddings when we have several strong lexical matches.
+    # Raw result count alone is too noisy for natural-language queries because
+    # weak OR matches can inflate FTS results without being genuinely relevant.
+    strong_fts_results = [r for r in fts_results if r["score"] >= 0.15]
+    if len(strong_fts_results) >= min_fts_results:
+        return adjust_result_scores(fts_results, query)[:limit]
 
     # If no embedding provider, return FTS-only
     if embedding_provider is None:
-        return fts_results[:limit]
+        return adjust_result_scores(fts_results, query)[:limit]
 
     # FTS results are sparse — fall back to hybrid (embed + vector search + merge)
     try:
         query_vec = embedding_provider.embed(query)
         vec_results = db.vector_search(
-            query_vec, limit=limit * 2, project=project, source=source
+            query_vec,
+            limit=limit * 2,
+            project=project,
+            source=source,
+            include_archived=include_archived,
         )
+        # When lexical evidence is sparse and disagrees with the top semantic hit,
+        # trust vectors more heavily. A single strong keyword match can otherwise
+        # overwhelm the actual best semantic result.
+        fts_weight = 0.3
+        vec_weight = 0.7
+        if (
+            len(strong_fts_results) == 1
+            and vec_results
+            and strong_fts_results[0]["id"] != vec_results[0]["id"]
+        ):
+            fts_weight = 0.05
+            vec_weight = 0.95
+
         # FTS scores already normalized (max=1.0); merge_results re-normalizes
         # which is a no-op on 0-1 scores.
-        return merge_results(fts_results, vec_results, limit=limit)
+        return adjust_result_scores(
+            merge_results(
+                fts_results,
+                vec_results,
+                fts_weight=fts_weight,
+                vec_weight=vec_weight,
+                limit=limit * 2,
+            ),
+            query,
+        )[:limit]
     except Exception:
         # On any embedding/vector error, return whatever FTS found
-        return fts_results[:limit]
+        return adjust_result_scores(fts_results, query)[:limit]
 
 
 def hybrid_search(
@@ -118,6 +198,7 @@ def hybrid_search(
     limit: int = 5,
     project: Optional[str] = None,
     source: Optional[str] = None,
+    include_archived: bool = False,
 ) -> list[dict]:
     """Run FTS5 and optionally vector search, merge results.
 
@@ -134,7 +215,13 @@ def hybrid_search(
     Returns:
         Merged and re-ranked search results
     """
-    fts_results = db.fts_search(query, limit=limit * 2, project=project, source=source)
+    fts_results = db.fts_search(
+        query,
+        limit=limit * 2,
+        project=project,
+        source=source,
+        include_archived=include_archived,
+    )
 
     if embedding_provider is None:
         # FTS-only mode: normalize scores and return directly
@@ -142,10 +229,16 @@ def hybrid_search(
             max_score = max(r["score"] for r in fts_results) or 1.0
             for r in fts_results:
                 r["score"] = r["score"] / max_score if max_score > 0 else 0.0
-        return fts_results[:limit]
+        return adjust_result_scores(fts_results, query)[:limit]
 
     query_vec = embedding_provider.embed(query)
     vec_results = db.vector_search(
-        query_vec, limit=limit * 2, project=project, source=source
+        query_vec,
+        limit=limit * 2,
+        project=project,
+        source=source,
+        include_archived=include_archived,
     )
-    return merge_results(fts_results, vec_results, limit=limit)
+    return adjust_result_scores(
+        merge_results(fts_results, vec_results, limit=limit * 2), query
+    )[:limit]

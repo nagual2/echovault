@@ -1,6 +1,7 @@
 """SQLite database layer with FTS5 and sqlite-vec for memory storage."""
 
 import json
+import re
 import struct
 from typing import Optional
 
@@ -13,6 +14,55 @@ except ImportError:
 import sqlite_vec
 
 from memory.models import Memory, MemoryDetail
+
+
+_FTS_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "that",
+    "the",
+    "this",
+    "to",
+    "with",
+}
+
+
+def _build_fts_query(query: str) -> str:
+    """Build a prefix FTS query while dropping obvious lexical noise.
+
+    FTS is only used as a lexical signal. Filtering short/common stop-words keeps
+    multi-word natural-language queries from matching nearly every memory.
+    """
+    raw_terms = re.findall(r"\w+", query.lower(), flags=re.UNICODE)
+    filtered_terms = [
+        term for term in raw_terms if len(term) > 1 and term not in _FTS_STOPWORDS
+    ]
+
+    # Fall back gracefully for short or stop-word-only queries such as "AI" or "in".
+    terms = filtered_terms or raw_terms or [query.strip()]
+
+    unique_terms: list[str] = []
+    seen: set[str] = set()
+    for term in terms:
+        if term and term not in seen:
+            unique_terms.append(term)
+            seen.add(term)
+
+    return " OR ".join(f'"{term}"*' for term in unique_terms)
 
 
 class MemoryDB:
@@ -57,7 +107,11 @@ class MemoryDB:
                 file_path TEXT NOT NULL,
                 section_anchor TEXT,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                status TEXT DEFAULT 'active',
+                archived_at TEXT,
+                archive_reason TEXT,
+                superseded_by TEXT
             )
         """)
 
@@ -104,11 +158,37 @@ class MemoryDB:
             END
         """)
 
-        # Migration: add updated_count column if missing
+        # Migration: add usage tracking columns if missing
         cursor.execute("PRAGMA table_info(memories)")
         columns = {row[1] for row in cursor.fetchall()}
         if "updated_count" not in columns:
             cursor.execute("ALTER TABLE memories ADD COLUMN updated_count INTEGER DEFAULT 0")
+        if "status" not in columns:
+            cursor.execute("ALTER TABLE memories ADD COLUMN status TEXT DEFAULT 'active'")
+        if "archived_at" not in columns:
+            cursor.execute("ALTER TABLE memories ADD COLUMN archived_at TEXT")
+        if "archive_reason" not in columns:
+            cursor.execute("ALTER TABLE memories ADD COLUMN archive_reason TEXT")
+        if "superseded_by" not in columns:
+            cursor.execute("ALTER TABLE memories ADD COLUMN superseded_by TEXT")
+        if "access_count" not in columns:
+            cursor.execute("ALTER TABLE memories ADD COLUMN access_count INTEGER DEFAULT 0")
+        if "session_access_count" not in columns:
+            cursor.execute("ALTER TABLE memories ADD COLUMN session_access_count INTEGER DEFAULT 0")
+        if "last_session_id" not in columns:
+            cursor.execute("ALTER TABLE memories ADD COLUMN last_session_id TEXT")
+        if "last_accessed_at" not in columns:
+            cursor.execute("ALTER TABLE memories ADD COLUMN last_accessed_at TEXT")
+
+        # Create core memory usage tracking table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS core_memory_usage (
+                id TEXT PRIMARY KEY,
+                unused_sessions_count INTEGER DEFAULT 0,
+                last_used_session_id TEXT,
+                last_used_at TEXT
+            )
+        """)
 
         # Create vec table if dimension is already known (e.g. reopening existing DB)
         dim = self.get_embedding_dim()
@@ -200,13 +280,13 @@ class MemoryDB:
             INSERT INTO memories (
                 id, title, what, why, impact, tags, category, project,
                 source, related_files, file_path, section_anchor,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                created_at, updated_at, status, archived_at, archive_reason, superseded_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             mem.id, mem.title, mem.what, mem.why, mem.impact,
             tags_json, mem.category, mem.project, mem.source,
             related_files_json, mem.file_path, mem.section_anchor,
-            mem.created_at, mem.updated_at
+            mem.created_at, mem.updated_at, mem.status, mem.archived_at, mem.archive_reason, mem.superseded_by
         ))
 
         rowid = cursor.lastrowid
@@ -239,6 +319,84 @@ class MemoryDB:
             VALUES (?, ?)
         """, (rowid, vec_bytes))
 
+        self.conn.commit()
+
+    def record_access(self, memory_id: str, session_id: str) -> None:
+        """Record an access to a memory and increment counters.
+
+        Args:
+            memory_id: Full UUID or prefix of the memory accessed
+            session_id: Current session identifier
+        """
+        cursor = self.conn.cursor()
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Resolve full ID
+        cursor.execute("SELECT id, last_session_id FROM memories WHERE id LIKE ?", (memory_id + "%",))
+        row = cursor.fetchone()
+        if not row:
+            return
+
+        full_id = row["id"]
+        last_sid = row["last_session_id"]
+
+        if last_sid != session_id:
+            # New session for this memory: reset session count and increment total
+            cursor.execute("""
+                UPDATE memories
+                SET access_count = access_count + 1,
+                    session_access_count = 1,
+                    last_session_id = ?,
+                    last_accessed_at = ?
+                WHERE id = ?
+            """, (session_id, now, full_id))
+        else:
+            # Same session: increment both
+            cursor.execute("""
+                UPDATE memories
+                SET access_count = access_count + 1,
+                    session_access_count = session_access_count + 1,
+                    last_accessed_at = ?
+                WHERE id = ?
+            """, (now, full_id))
+
+        self.conn.commit()
+
+    def record_core_memory_usage(self, core_id: str, session_id: str) -> None:
+        """Record usage of a core memory entry.
+
+        Args:
+            core_id: Core memory ID
+            session_id: Current session identifier
+        """
+        cursor = self.conn.cursor()
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+
+        cursor.execute("""
+            INSERT INTO core_memory_usage (id, unused_sessions_count, last_used_session_id, last_used_at)
+            VALUES (?, 0, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                unused_sessions_count = 0,
+                last_used_session_id = excluded.last_used_session_id,
+                last_used_at = excluded.last_used_at
+        """, (core_id, session_id, now))
+
+        self.conn.commit()
+
+    def increment_unused_sessions_for_core(self, session_id: str) -> None:
+        """Increment unused session count for all core memories not used in this session.
+
+        Args:
+            session_id: Current session identifier
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            UPDATE core_memory_usage
+            SET unused_sessions_count = unused_sessions_count + 1
+            WHERE last_used_session_id IS NULL OR last_used_session_id != ?
+        """, (session_id,))
         self.conn.commit()
 
     def get_memory(self, memory_id: str) -> Optional[dict]:
@@ -383,6 +541,7 @@ class MemoryDB:
         limit: int = 10,
         project: Optional[str] = None,
         source: Optional[str] = None,
+        include_archived: bool = False,
     ) -> list[dict]:
         """Search memories using FTS5 full-text search.
 
@@ -395,9 +554,8 @@ class MemoryDB:
         Returns:
             List of memory dictionaries with BM25 scores
         """
-        # Build prefix matching query
-        terms = query.split()
-        fts_query = " OR ".join(f'"{term}"*' for term in terms)
+        # Build prefix matching query while filtering obvious stop-word noise.
+        fts_query = _build_fts_query(query)
 
         # Build WHERE clause for filters
         where_clauses = []
@@ -410,6 +568,8 @@ class MemoryDB:
         if source:
             where_clauses.append("m.source = ?")
             params.append(source)
+        if not include_archived:
+            where_clauses.append("(m.status IS NULL OR m.status = 'active')")
 
         where_clause = ""
         if where_clauses:
@@ -437,6 +597,7 @@ class MemoryDB:
         limit: int = 10,
         project: Optional[str] = None,
         source: Optional[str] = None,
+        include_archived: bool = False,
     ) -> list[dict]:
         """Search memories using vector similarity.
 
@@ -454,30 +615,47 @@ class MemoryDB:
 
         vec_bytes = struct.pack(f"{len(query_embedding)}f", *query_embedding)
 
+        # sqlite-vec applies k before SQL post-filters. When filtering by project or
+        # source, over-fetch candidate vectors so the final filtered set still has
+        # relevant rows from the desired slice.
+        fetch_k = limit
+        if project or source:
+            fetch_k = max(limit * 20, 100)
+
+        where_clauses = ["v.embedding MATCH ?", "k = ?"]
+        params: list = [vec_bytes, fetch_k]
+
+        if project:
+            where_clauses.append("m.project = ?")
+            params.append(project)
+
+        if source:
+            where_clauses.append("m.source = ?")
+            params.append(source)
+        if not include_archived:
+            where_clauses.append("(m.status IS NULL OR m.status = 'active')")
+
+        where_clause = " AND ".join(where_clauses)
+
         cursor = self.conn.cursor()
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT m.*, v.distance,
                    EXISTS(SELECT 1 FROM memory_details WHERE memory_id = m.id) as has_details
             FROM memories_vec v
             JOIN memories m ON m.rowid = v.rowid
-            WHERE v.embedding MATCH ?
-            AND k = ?
+            WHERE {where_clause}
             ORDER BY v.distance
-        """, (vec_bytes, limit))
+        """, params)
 
         results = []
         for row in cursor.fetchall():
             result = dict(row)
-            # Convert distance to similarity score (1 - distance)
-            result["score"] = 1.0 - result["distance"]
+            # sqlite-vec returns distance where smaller is better. Convert it to a
+            # bounded positive similarity score so hybrid ranking can merge it.
+            distance = float(result["distance"])
+            result["score"] = 1.0 / (1.0 + max(distance, 0.0))
             del result["distance"]
             results.append(result)
-
-        # Post-filter by project/source if needed
-        if project:
-            results = [r for r in results if r["project"] == project]
-        if source:
-            results = [r for r in results if r["source"] == source]
 
         return results
 
@@ -486,6 +664,7 @@ class MemoryDB:
         limit: int = 10,
         project: Optional[str] = None,
         source: Optional[str] = None,
+        include_archived: bool = False,
     ) -> list[dict]:
         """List recent memories ordered by creation date descending.
 
@@ -507,6 +686,8 @@ class MemoryDB:
         if source:
             where_clauses.append("m.source = ?")
             params.append(source)
+        if not include_archived:
+            where_clauses.append("(m.status IS NULL OR m.status = 'active')")
 
         where_clause = ""
         if where_clauses:
@@ -544,6 +725,7 @@ class MemoryDB:
         self,
         project: Optional[str] = None,
         source: Optional[str] = None,
+        include_archived: bool = False,
     ) -> int:
         """Count total memories with optional filters.
 
@@ -564,6 +746,8 @@ class MemoryDB:
         if source:
             where_clauses.append("source = ?")
             params.append(source)
+        if not include_archived:
+            where_clauses.append("(status IS NULL OR status = 'active')")
 
         where_clause = ""
         if where_clauses:
@@ -575,6 +759,46 @@ class MemoryDB:
         """, params)
 
         return cursor.fetchone()[0]
+
+    def list_memories(
+        self,
+        limit: int = 200,
+        project: Optional[str] = None,
+        category: Optional[str] = None,
+        file_path: Optional[str] = None,
+        include_archived: bool = False,
+    ) -> list[dict]:
+        """List memories with dashboard-friendly filters."""
+        where_clauses = []
+        params: list = []
+
+        if project:
+            where_clauses.append("m.project = ?")
+            params.append(project)
+        if category:
+            where_clauses.append("m.category = ?")
+            params.append(category)
+        if file_path:
+            where_clauses.append("m.file_path = ?")
+            params.append(file_path)
+        if not include_archived:
+            where_clauses.append("(m.status IS NULL OR m.status = 'active')")
+
+        where_clause = ""
+        if where_clauses:
+            where_clause = "WHERE " + " AND ".join(where_clauses)
+
+        params.append(limit)
+        cursor = self.conn.cursor()
+        cursor.execute(f"""
+            SELECT m.*,
+                   EXISTS(SELECT 1 FROM memory_details WHERE memory_id = m.id) as has_details
+            FROM memories m
+            {where_clause}
+            ORDER BY m.updated_at DESC, m.created_at DESC
+            LIMIT ?
+        """, params)
+        return [dict(row) for row in cursor.fetchall()]
 
     def set_meta(self, key: str, value: str) -> None:
         """Set a metadata key-value pair.

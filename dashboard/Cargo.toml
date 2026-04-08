@@ -1,0 +1,24 @@
+[package]
+name = "memory-dashboard"
+version = "0.4.0"
+edition = "2021"
+description = "Terminal dashboard for EchoVault memory system"
+
+[[bin]]
+name = "memory-dashboard"
+path = "src/main.rs"
+
+[dependencies]
+ratatui = "0.29"
+crossterm = "0.28"
+rusqlite = { version = "0.32", features = ["bundled", "bundled-full"] }
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+# similar removed - using inline sequence matcher
+tempfile = "3"
+clap = { version = "4", features = ["derive", "env"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
