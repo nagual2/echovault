@@ -20,6 +20,17 @@ from memory.unified_adapter import UnifiedMemoryAdapter
 _unified_adapter: Optional[UnifiedMemoryAdapter] = None
 _unified_initialized = False
 
+# Global UnifiedMemoryService singleton (lazy import to avoid circular deps)
+_unified_service = None
+
+def _get_unified_service(memory_home: str):
+    """Get or create singleton UnifiedMemoryService."""
+    global _unified_service
+    if _unified_service is None:
+        from memory.unified import create_unified_memory
+        _unified_service = create_unified_memory(memory_home=memory_home)
+    return _unified_service
+
 def _get_unified_adapter(service: MemoryService) -> Optional[UnifiedMemoryAdapter]:
     """Get or create unified adapter based on feature flags."""
     global _unified_adapter, _unified_initialized
@@ -170,18 +181,28 @@ def handle_memory_record_usage(
     memory_id: str,
 ) -> str:
     """Handle memory_record_usage tool call. Returns JSON string."""
+    import uuid
+    session_id = service.db.get_meta("current_session_id")
+    if not session_id:
+        session_id = str(uuid.uuid4())
+        service.db.set_meta("current_session_id", session_id)
+    
     if usage_type == "core":
-        service.db.record_core_memory_usage(memory_id, service.session_id)
+        service.db.record_core_memory_usage(memory_id, session_id)
         return json.dumps({"status": "success", "message": f"Recorded usage for core memory {memory_id}"})
     elif usage_type == "main":
-        service.db.record_access(memory_id, service.session_id)
+        service.db.record_access(memory_id, session_id)
         return json.dumps({"status": "success", "message": f"Recorded access for main memory {memory_id}"})
     return json.dumps({"status": "error", "message": f"Invalid usage type: {usage_type}"})
 
 
 def handle_memory_governor(service: MemoryService) -> str:
     """Handle memory_governor tool call. Returns JSON string with actions."""
-    session_id = service.session_id
+    import uuid
+    session_id = service.db.get_meta("current_session_id")
+    if not session_id:
+        session_id = str(uuid.uuid4())
+        service.db.set_meta("current_session_id", session_id)
     actions = []
 
     # 1. Demotion logic (Core -> Main)
@@ -222,7 +243,6 @@ def handle_memory_governor(service: MemoryService) -> str:
     service.db.increment_unused_sessions_for_core(session_id)
     
     # Generate next session ID
-    import uuid
     new_sid = str(uuid.uuid4())
     service.db.set_meta("current_session_id", new_sid)
 
@@ -579,34 +599,45 @@ def _create_server(service: MemoryService) -> Server:
             rollback(service.memory_home)
             result = json.dumps({"status": "emergency_rollback", "message": "Unified memory disabled"})
         elif name == "memory_unified_search":
-            from memory.unified import create_unified_memory
-            unified = create_unified_memory(memory_home=service.memory_home)
+            unified = _get_unified_service(service.memory_home)
             entries = unified.search_sync(
                 query=arguments.get("query", ""),
                 limit=arguments.get("limit", 5),
                 project=arguments.get("project")
             )
-            result = json.dumps({"results": [e.__dict__ for e in entries], "count": len(entries)})
+            results_list = []
+            for e in entries:
+                d = e.__dict__.copy()
+                d["tier"] = e.tier.value
+                results_list.append(d)
+            result = json.dumps({"results": results_list, "count": len(results_list)})
         elif name == "memory_unified_context":
-            from memory.unified import create_unified_memory
-            unified = create_unified_memory(memory_home=service.memory_home)
-            entries = unified.get_context_sync(
+            unified = _get_unified_service(service.memory_home)
+            entries = unified.get_context(
                 limit=arguments.get("limit", 10),
                 project=arguments.get("project")
             )
-            result = json.dumps({"results": [e.__dict__ for e in entries], "count": len(entries)})
+            results_list = []
+            for e in entries:
+                d = e.__dict__.copy()
+                d["tier"] = e.tier.value
+                results_list.append(d)
+            result = json.dumps({"results": results_list, "count": len(results_list)})
         elif name == "memory_unified_save":
-            from memory.unified import create_unified_memory, MemoryEntry, MemoryTier
-            unified = create_unified_memory(memory_home=service.memory_home)
+            from memory.unified import MemoryEntry, MemoryTier
+            import uuid, time
+            unified = _get_unified_service(service.memory_home)
             entry = MemoryEntry(
+                id=str(uuid.uuid4()),
                 title=arguments.get("title", ""),
                 what=arguments.get("what", ""),
+                tier=MemoryTier.FAST,
+                timestamp=int(time.time()),
+                tags=arguments.get("tags", []),
                 why=arguments.get("why"),
                 impact=arguments.get("impact"),
-                tags=arguments.get("tags", []),
                 category=arguments.get("category"),
                 project=arguments.get("project"),
-                tier=MemoryTier.FAST
             )
             unified.save(entry)
             result = json.dumps({"status": "saved", "id": entry.id})
