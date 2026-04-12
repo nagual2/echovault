@@ -134,9 +134,15 @@ class UnifiedMemoryAdapter:
         return migrated
 
 
-def create_unified_adapter(memory_home: Optional[str] = None) -> UnifiedMemoryAdapter:
-    """Create adapter with default configuration."""
-    existing = MemoryService(memory_home=memory_home)
+def create_unified_adapter(memory_home: Optional[str] = None, existing: Optional[MemoryService] = None) -> UnifiedMemoryAdapter:
+    """Create adapter with default configuration.
+    
+    Args:
+        memory_home: Path to memory home directory
+        existing: Optional existing MemoryService instance (if provided, memory_home is ignored)
+    """
+    if existing is None:
+        existing = MemoryService(memory_home=memory_home)
     unified = create_unified_memory(
         memory_home=existing.memory_home,
         embedding_provider=existing.embedding_provider

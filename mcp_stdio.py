@@ -3,6 +3,12 @@
 import sys
 import os
 
+# Fix Windows console encoding for Unicode characters
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
 # Set up paths
 base_dir = os.path.dirname(os.path.abspath(__file__))
 src_path = os.path.join(base_dir, 'src')
