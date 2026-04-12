@@ -113,7 +113,7 @@ class RollbackManager:
             self.config.migration_date = datetime.now().isoformat()
         
         self._save_config()
-        print(f"[RollbackManager] State: {old_state.value} → {state.value}")
+        print(f"[RollbackManager] State: {old_state.value} -> {state.value}")
     
     def should_use_unified(self) -> bool:
         """Check if current operation should use unified system."""

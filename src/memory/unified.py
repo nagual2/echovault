@@ -1,12 +1,12 @@
 """Unified 3-tier memory system for EchoVault.
 
 Maps to user model:
-- Fast tier = Core (in-memory, 24h TTL) — synchronous, immediate
-- Medium tier = Short-term (SSD, 7 days, LRU eviction) — synchronous, <100ms
-- Slow tier = Long-term (HDD, semantic) — asynchronous, callback-based
+- Fast tier = Core (in-memory, 24h TTL) -- synchronous, immediate
+- Medium tier = Short-term (SSD, 7 days, LRU eviction) -- synchronous, <100ms
+- Slow tier = Long-term (HDD, semantic) -- asynchronous, callback-based
 
 Migration pipeline:
-  Input → Fast (24h) → structure → Medium (LRU) → compress → Slow (semantic)
+  Input -> Fast (24h) -> structure -> Medium (LRU) -> compress -> Slow (semantic)
 """
 
 import asyncio
@@ -906,7 +906,7 @@ class UnifiedMemoryService:
     
     async def _run_migration(self):
         """Run migration between tiers."""
-        # Fast → Medium: entries ready for structuring
+        # Fast -> Medium: entries ready for structuring
         fast_candidates = self.fast.get_for_migration(limit=20)
         for entry in fast_candidates:
             # "Structure" - just move to medium for now
@@ -915,9 +915,9 @@ class UnifiedMemoryService:
             self.fast.remove(entry.id)
         
         if fast_candidates:
-            print(f"[UnifiedMemory] Migrated {len(fast_candidates)} Fast→Medium")
+            print(f"[UnifiedMemory] Migrated {len(fast_candidates)} Fast->Medium")
         
-        # Medium → Slow: low-access, old entries
+        # Medium -> Slow: low-access, old entries
         medium_candidates = self.medium.get_for_migration(limit=10)
         for entry in medium_candidates:
             # Compress and move to slow
@@ -926,7 +926,7 @@ class UnifiedMemoryService:
             # Could add "archived" flag instead
         
         if medium_candidates:
-            print(f"[UnifiedMemory] Migrated {len(medium_candidates)} Medium→Slow")
+            print(f"[UnifiedMemory] Migrated {len(medium_candidates)} Medium->Slow")
     
     def save(self, entry: MemoryEntry) -> None:
         """Save entry to Fast tier (entry point)."""
